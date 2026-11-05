@@ -1,5 +1,6 @@
 """Evidence-grounded retrieval over synthetic aircraft quality notes."""
 import json, os, re, sqlite3, random, urllib.request, urllib.error
+from collections import Counter
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -62,7 +63,7 @@ def build_documents():
 def search(question,limit=5):
     question=question.strip()
     if not question:raise ValueError("Question is required")
-    if not DOCS.exists() or not any(DOCS.glob("SIM-MSN-*.md")):build_documents()
+    if not DOCS.exists() or len(list(DOCS.glob("SIM-MSN-*.md"))) != 120:build_documents()
     ids=list(dict.fromkeys(x.upper() for x in AIRCRAFT.findall(question)))
     if len(ids)>3:raise ValueError("Ask about up to three aircraft")
     if ids:
@@ -73,7 +74,10 @@ def search(question,limit=5):
             db.execute("INSERT INTO documents VALUES(?,?)",(path.name,path.read_text()))
         terms=re.findall(r"[a-zA-Z0-9]{3,}",question)[:10]
         if not terms:return []
-        query=" OR ".join('"'+t+'"' for t in terms)
+        stopwords={"what","which","where","when","does","with","from","about","show","find","give","the","and","for","are","how","all","have","that","this","quality","aircraft","records","record","synthetic"}
+        terms=[t.lower() for t in terms if t.lower() not in stopwords]
+        if not terms:return []
+        query=" OR ".join('"'+t+'"' for t in dict.fromkeys(terms))
         rows=db.execute("SELECT source,content FROM documents WHERE documents MATCH ? ORDER BY bm25(documents) LIMIT ?",(query,limit)).fetchall()
         return [{"source":name,"aircraft_id":name[:-3],"text":content[:12000]} for name,content in rows]
 
@@ -98,9 +102,12 @@ def gemini_answer(question,documents):
     except urllib.error.HTTPError as e:raise RetrievalError(f"Gemini API returned HTTP {e.code}") from e
     except (urllib.error.URLError,TimeoutError) as e:raise RetrievalError("Gemini API connection failed") from e
 
-def answer(question,use_gemini=True):
+def answer(question,use_gemini=False):
     docs=search(question)
     if not docs:return {"answer":"No matching synthetic quality record found. Cannot answer from the available documents.","citations":[],"grounded":False,"mode":"retrieval"}
     citations=[{"source":d["source"],"aircraft_id":d["aircraft_id"]} for d in docs]
-    if use_gemini:return {"answer":gemini_answer(question,docs),"citations":citations,"grounded":True,"mode":"gemini"}
+    if use_gemini:
+        generated=gemini_answer(question,docs)
+        # Model output is unverified even when supplied with retrieved evidence.
+        return {"answer":generated,"citations":citations,"grounded":False,"mode":"gemini","warning":"AI-generated text may contain unsupported claims. Verify against the cited source documents."}
     return {"answer":"Retrieved synthetic quality documents. Enable Gemini to generate a grounded answer.","citations":citations,"grounded":True,"mode":"retrieval","excerpts":[d["text"][:1500] for d in docs]}
