@@ -1,6 +1,5 @@
 """Evidence-grounded retrieval over synthetic aircraft quality notes."""
 import json, os, re, sqlite3, random, urllib.request, urllib.error
-from collections import Counter
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -63,7 +62,7 @@ def build_documents():
 def search(question,limit=5):
     question=question.strip()
     if not question:raise ValueError("Question is required")
-    if not DOCS.exists() or len(list(DOCS.glob("SIM-MSN-*.md"))) != 120:build_documents()
+    if not DOCS.exists() or not any(DOCS.glob("SIM-MSN-*.md")):build_documents()
     ids=list(dict.fromkeys(x.upper() for x in AIRCRAFT.findall(question)))
     if len(ids)>3:raise ValueError("Ask about up to three aircraft")
     if ids:
