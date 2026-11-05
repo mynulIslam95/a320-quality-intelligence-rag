@@ -6,7 +6,7 @@ from .core import answer,build_documents,DOCS,RetrievalError
 app=FastAPI(title="A320 Quality Intelligence",version="1.0.0")
 class Question(BaseModel):
     question:str=Field(min_length=3,max_length=500)
-    use_gemini:bool=True
+    use_gemini:bool=False
 
 @app.on_event("startup")
 def prepare():
